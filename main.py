@@ -12,6 +12,9 @@ import numpy as np
 import sys
 import cv2
 import os
+from skimage.measure import label
+from sklearn.cluster import KMeans
+
 
 BIN_SIZE = 16
 TEST_PATH = 'test'
@@ -52,7 +55,7 @@ def normalized_color_histogram(image):
     @return feature: color moment results ​​of the examined channel
 """
 def moment(channel):
-    feature = []    
+    feature = []
     feature.append(np.mean(channel))
     feature.append(np.std(channel))
     feature.append(skew(channel))
@@ -80,7 +83,6 @@ def color_moment(image):
     feature = []
     for i in range(channel):
         feature.extend(moment(channel_list[i]))
-    
     return feature
     
 
@@ -108,32 +110,56 @@ def normalize_moment_feature(data, str_point, number_of_channel):
         for j in range(number_of_data):
             data[j][i] = (data[j][i] - min_val) / (max_val - min_val)
 
-def color_coherence_vector(image):
-    """
-    Computes the Color Coherence Vector (CCV) for the image.
-    
-    @param image: image
-    @return feature: CCV feature vector
-    """
-    # Placeholder for CCV implementation
-    # Replace with actual CCV computation
-    feature = []
-    return feature
+def color_coherence_vector(image, tau=100):
+    row, column, channel = image.shape[:3]
+    ccv_feature = []
+    for i in range(channel):
+        # Quantize the channel to BIN_SIZE bins
+        channel_data = image[:, :, i]
+        quantized = np.digitize(channel_data, bins=np.linspace(0, 256, BIN_SIZE))
+        
+        # Label connected components
+        labeled, num = label(quantized, connectivity=2, return_num=True)
+        
+        coherent = np.zeros(BIN_SIZE)
+        incoherent = np.zeros(BIN_SIZE)
+        
+        # Count pixel coherence
+        for j in range(1, num + 1):
+            mask = labeled == j
+            size = np.sum(mask)
+            bin_idx = quantized[mask][0] - 1  # Bin index (0-indexed)
+            
+            if size >= tau:
+                coherent[bin_idx] += size
+            else:
+                incoherent[bin_idx] += size
+                
+        # Combine coherent and incoherent into a single feature vector
+        ccv_feature.extend(coherent)
+        ccv_feature.extend(incoherent)
+    return ccv_feature
 
-def eval_eculidean(y, y_predict):
-    return np.sqrt(np.sum((y - y_predict) ** 2))
-
-def eval_corr(y, y_predict):
-    return np.corrcoef(y, y_predict)
+def dominant_color_descriptor(image, k=5):
+    # Convert the image to RGB format
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # Reshape the image to be a list of pixels
+    pixels = image.reshape(-1, 3)
+    # Apply k-means clustering to find the dominant colors
+    kmeans = KMeans(n_clusters=k)
+    kmeans.fit(pixels)
+    # Get the cluster centers (dominant colors)
+    dominant_colors = kmeans.cluster_centers_
+    # Get the proportion of each cluster
+    labels, counts = np.unique(kmeans.labels_, return_counts=True)
+    proportions = counts / counts.sum()
+    # Combine the dominant colors and their proportions into a single list
+    dcd_features = []
+    for color, proportion in zip(dominant_colors, proportions):
+        dcd_features.extend(color)
+        dcd_features.append(proportion)
     
-def eval_chi_square(y, y_predict):
-    return np.sum((y - y_predict) ** 2 / (y + y_predict))
-    
-def eval_intersection(y, y_predict):
-    return np.sum(np.minimum(y, y_predict)) / np.sum(np.maximum(y, y_predict))
-
-def eval_battacharyya(y, y_predict):
-    return -np.log(np.sum(np.sqrt(y * y_predict)))
+    return dcd_features
 
 """ code start """
 if __name__ == '__main__':
@@ -168,7 +194,8 @@ if __name__ == '__main__':
                 histogram_features = normalized_color_histogram(image)
                 moment_features = color_moment(image)
                 ccv_features = color_coherence_vector(image)
-                train_data.append(histogram_features + moment_features)
+                dcd_features = dominant_color_descriptor(image)
+                train_data.append(histogram_features + moment_features + ccv_features + dcd_features)
                 train_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
@@ -193,8 +220,9 @@ if __name__ == '__main__':
                 image = read_image(os.path.join(path, image_name))
                 histogram_features = normalized_color_histogram(image)
                 moment_features = color_moment(image)
-                #ccv_features = color_coherence_vector(image)
-                test_data.append(histogram_features + moment_features)
+                ccv_features = color_coherence_vector(image)
+                dcd_features = dominant_color_descriptor(image)
+                test_data.append(histogram_features + moment_features + ccv_features + dcd_features)
                 test_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
@@ -208,8 +236,3 @@ if __name__ == '__main__':
     print("Accuracy:", metrics.accuracy_score(test_label, prediction))
     print()
     print(confusion_matrix(test_label, prediction))
-    print("Euclidean Distance:", eval_eculidean(test_label, prediction))
-    print("Correlation Coefficient:", eval_corr(test_label, prediction))
-    print("Chi Square:", eval_chi_square(test_label, prediction))
-    print("Intersection:", eval_intersection(test_label, prediction))
-    print("Battacharyya:", eval_battacharyya(test_label, prediction))
