@@ -108,6 +108,32 @@ def normalize_moment_feature(data, str_point, number_of_channel):
         for j in range(number_of_data):
             data[j][i] = (data[j][i] - min_val) / (max_val - min_val)
 
+def color_coherence_vector(image):
+    """
+    Computes the Color Coherence Vector (CCV) for the image.
+    
+    @param image: image
+    @return feature: CCV feature vector
+    """
+    # Placeholder for CCV implementation
+    # Replace with actual CCV computation
+    feature = []
+    return feature
+
+def eval_eculidean(y, y_predict):
+    return np.sqrt(np.sum((y - y_predict) ** 2))
+
+def eval_corr(y, y_predict):
+    return np.corrcoef(y, y_predict)
+    
+def eval_chi_square(y, y_predict):
+    return np.sum((y - y_predict) ** 2 / (y + y_predict))
+    
+def eval_intersection(y, y_predict):
+    return np.sum(np.minimum(y, y_predict)) / np.sum(np.maximum(y, y_predict))
+
+def eval_battacharyya(y, y_predict):
+    return -np.log(np.sum(np.sqrt(y * y_predict)))
 
 """ code start """
 if __name__ == '__main__':
@@ -141,13 +167,18 @@ if __name__ == '__main__':
                 image = read_image(os.path.join(path, image_name))
                 histogram_features = normalized_color_histogram(image)
                 moment_features = color_moment(image)
+                ccv_features = color_coherence_vector(image)
                 train_data.append(histogram_features + moment_features)
                 train_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
     normalize_moment_feature(train_data, BIN_SIZE * image.shape[2], image.shape[2])
-    
-    model = KNeighborsClassifier(n_neighbors = 5)
+    from sklearn.impute import SimpleImputer
+
+    imputer = SimpleImputer(strategy='mean')  # or 'median', 'most_frequent', etc.
+    train_data = imputer.fit_transform(train_data)
+
+    model = KNeighborsClassifier(n_neighbors = 1)
     model.fit(train_data, train_label)
     
     print('<----------TEST START ---------->')
@@ -162,14 +193,23 @@ if __name__ == '__main__':
                 image = read_image(os.path.join(path, image_name))
                 histogram_features = normalized_color_histogram(image)
                 moment_features = color_moment(image)
+                #ccv_features = color_coherence_vector(image)
                 test_data.append(histogram_features + moment_features)
                 test_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
     normalize_moment_feature(test_data, BIN_SIZE * image.shape[2], image.shape[2])
     
+    
+    
+
     prediction = model.predict(test_data)
     print()
     print("Accuracy:", metrics.accuracy_score(test_label, prediction))
     print()
     print(confusion_matrix(test_label, prediction))
+    print("Euclidean Distance:", eval_eculidean(test_label, prediction))
+    print("Correlation Coefficient:", eval_corr(test_label, prediction))
+    print("Chi Square:", eval_chi_square(test_label, prediction))
+    print("Intersection:", eval_intersection(test_label, prediction))
+    print("Battacharyya:", eval_battacharyya(test_label, prediction))
