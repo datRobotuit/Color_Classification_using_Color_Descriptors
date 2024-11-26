@@ -1,3 +1,4 @@
+#22520241 - Van Tien Dat
 # -*- coding: utf-8 -*-
 """
 Created on Tue Dec 17 15:43:46 2019
@@ -111,7 +112,7 @@ def normalize_moment_feature(data, str_point, number_of_channel):
             data[j][i] = (data[j][i] - min_val) / (max_val - min_val)
 
 def color_coherence_vector(image, tau=100):
-    row, column, channel = image.shape[:3]
+    channel = image.shape[2]
     ccv_feature = []
     for i in range(channel):
         # Quantize the channel to BIN_SIZE bins
@@ -161,6 +162,25 @@ def dominant_color_descriptor(image, k=5):
     
     return dcd_features
 
+def chi_square_distance(a, b):
+    return 0.5 * np.sum((a - b) ** 2 / (a + b ))
+
+def correlation_distance(p, q):
+    p_mean = np.mean(p)
+    q_mean = np.mean(q)
+    
+    numerator = np.sum((p - p_mean) * (q - q_mean))
+    denominator = np.sqrt(np.sum((p - p_mean) ** 2) * np.sum((q - q_mean) ** 2))
+    
+    correlation = numerator / denominator
+    return 1 - correlation  # Khoảng cách là 1 - hệ số tương quan
+
+def intersection_distance(a, b):
+    return np.sum(np.minimum(a, b))
+
+def bhattacharyya_distance(p, q):
+    bc = np.sum(np.sqrt(p * q))
+    return -np.log(bc + 1e-10)
 """ code start """
 if __name__ == '__main__':
     # find number of train images
@@ -195,17 +215,21 @@ if __name__ == '__main__':
                 moment_features = color_moment(image)
                 ccv_features = color_coherence_vector(image)
                 dcd_features = dominant_color_descriptor(image)
-                train_data.append(histogram_features + moment_features + ccv_features + dcd_features)
+                train_data.append(histogram_features + moment_features + ccv_features)
                 train_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
     normalize_moment_feature(train_data, BIN_SIZE * image.shape[2], image.shape[2])
     from sklearn.impute import SimpleImputer
-
+    
     imputer = SimpleImputer(strategy='mean')  # or 'median', 'most_frequent', etc.
     train_data = imputer.fit_transform(train_data)
 
-    model = KNeighborsClassifier(n_neighbors = 1)
+    model = KNeighborsClassifier(n_neighbors = 5)
+    ##model = KNeighborsClassifier(n_neighbors = 5, metric = correlation_distance)
+    ##model = KNeighborsClassifier(n_neighbors = 5, metric = chi_square_distance)
+    ##model = KNeighborsClassifier(n_neighbors = 5, metric = intersection_distance)
+    ##model = KNeighborsClassifier(n_neighbors = 5, metric = bhattacharyya_distance)
     model.fit(train_data, train_label)
     
     print('<----------TEST START ---------->')
@@ -222,15 +246,13 @@ if __name__ == '__main__':
                 moment_features = color_moment(image)
                 ccv_features = color_coherence_vector(image)
                 dcd_features = dominant_color_descriptor(image)
-                test_data.append(histogram_features + moment_features + ccv_features + dcd_features)
+                test_data.append(histogram_features + moment_features + ccv_features)
                 test_label.append(index)
                 pbar.update(1)
                 print(' ', color_name, image_name)
     normalize_moment_feature(test_data, BIN_SIZE * image.shape[2], image.shape[2])
+    test_data = imputer.transform(test_data)
     
-    
-    
-
     prediction = model.predict(test_data)
     print()
     print("Accuracy:", metrics.accuracy_score(test_label, prediction))
